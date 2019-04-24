@@ -1,8 +1,11 @@
-name: EcanConsents
+name: Ash
 channels:
 - mullenkamp
 - conda-forge
 - defaults
 dependencies:
 - python=3.6
-- pdsql=1.2
+- pdsql
+- gistools
+- ecandbparams
+- ecanallousagetools
