@@ -1,4 +1,4 @@
-Water Usage data repo
+Ashburton CWMS repo
 ==================================
 
-This git repository contains code for processing water usage data.
+This git repository contains project code for Ashburton CWMS projects.
