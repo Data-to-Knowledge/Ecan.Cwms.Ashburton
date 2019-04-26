@@ -9,3 +9,5 @@ dependencies:
 - gistools
 - ecandbparams
 - ecanallousagetools
+- hydrointerp
+- hydrolm

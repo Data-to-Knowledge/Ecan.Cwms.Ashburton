@@ -6,23 +6,21 @@ Created on Wed Apr 24 09:32:35 2019
 """
 import os
 import pandas as pd
+import geopandas as gpd
 from gistools import rec, vector
 from ecandbparams import sql_arg
 from allotools import AlloUsage
 from pdsql import mssql
+import parameters as param
 
 pd.options.display.max_columns = 10
-today1 = str(pd.Timestamp.today().date())
 
 #######################################
 ### Parameters
 
-py_path = os.path.realpath(os.path.dirname(__file__))
-project_path = os.path.split(py_path)[0]
-
 site_csv = 'ashburton_sites.csv'
 
-server = 'edwprod01'
+server = param.hydro_server
 database = 'hydro'
 sites_table = 'ExternalSite'
 crc_wap_table = 'CrcWapAllo'
@@ -33,63 +31,75 @@ rec_catch_sql = 'rec_catch_gis'
 from_date = '2019-04-01'
 to_date = '2019-06-30'
 
-input_path = os.path.join(project_path, 'input')
-results_path = os.path.join(project_path, 'results')
-
-catch_del_shp = 'catch_del_{}.shp'.format(today1)
-allo_csv = 'allo_{}.csv'.format(today1)
-allo_wap_csv = 'allo_wap_{}.csv'.format(today1)
-wap_shp = 'wap_{}.shp'.format(today1)
-sites_shp = 'sites_{}.shp'.format(today1)
+catch_del_shp = 'catch_del_{}.shp'.format(param.run_time)
+allo_csv = 'allo_{}.csv'.format(param.run_time)
+allo_wap_csv = 'allo_wap_{}.csv'.format(param.run_time)
+waps_shp = 'waps_{}.shp'.format(param.run_time)
+min_flow_sites_shp = 'min_flow_sites_{}.shp'.format(param.run_time)
 
 ######################################
 ### Read in data
+print('Read in allocation and sites data')
 
-sites1 = mssql.rd_sql(server, database, sites_table, ['ExtSiteID', 'NZTMX', 'NZTMY'])
+try:
+    min_flow_sites_gdf = gpd.read_file(os.path.join(param.results_path, min_flow_sites_shp))
+    catch_gdf = gpd.read_file(os.path.join(param.results_path, catch_del_shp))
+    waps_gdf = gpd.read_file(os.path.join(param.results_path, waps_shp))
+    allo_wap = pd.read_csv(os.path.join(param.results_path, allo_wap_csv))
+    allo = pd.read_csv(os.path.join(param.results_path, allo_csv))
 
-ash_sites1 = pd.read_csv(os.path.join(input_path, site_csv)).site.astype(str)
+    print('-> loaded from local files')
 
-sites0 = sites1[sites1.ExtSiteID.isin(ash_sites1)].copy()
+except:
+    print('-> Processing data from the databases')
 
-sites2 = vector.xy_to_gpd('ExtSiteID', 'NZTMX', 'NZTMY', sites0)
-sites2.to_file(os.path.join(results_path, sites_shp))
+    sites1 = mssql.rd_sql(server, database, sites_table, ['ExtSiteID', 'NZTMX', 'NZTMY', 'SwazGroupName', 'SwazName'])
 
-sql1 = sql_arg()
+    ash_sites1 = pd.read_csv(os.path.join(param.inputs_path, site_csv)).site.astype(str)
 
-rec_rivers_dict = sql1.get_dict(rec_rivers_sql)
-rec_catch_dict = sql1.get_dict(rec_catch_sql)
+    sites0 = sites1[sites1.ExtSiteID.isin(ash_sites1)].copy()
 
-rec_rivers = mssql.rd_sql(**rec_rivers_dict)
-rec_catch = mssql.rd_sql(**rec_catch_dict)
+    min_flow_sites_gdf = vector.xy_to_gpd('ExtSiteID', 'NZTMX', 'NZTMY', sites0)
+    min_flow_sites_gdf.to_file(os.path.join(param.results_path, min_flow_sites_shp))
 
-###################################
-### Catchment delineation and WAPs
+    sql1 = sql_arg()
 
-catch1 = rec.catch_delineate(sites2, rec_rivers, rec_catch)
-catch1.to_file(os.path.join(results_path, catch_del_shp))
+    rec_rivers_dict = sql1.get_dict(rec_rivers_sql)
+    rec_catch_dict = sql1.get_dict(rec_catch_sql)
 
-wap1 = mssql.rd_sql(server, database, crc_wap_table, ['wap']).wap.unique()
+    rec_rivers = mssql.rd_sql(**rec_rivers_dict)
+    rec_catch = mssql.rd_sql(**rec_catch_dict)
 
-sites3 = sites1[sites1.ExtSiteID.isin(wap1)].copy()
+    ###################################
+    ### Catchment delineation and WAPs
 
-sites4 = vector.xy_to_gpd('ExtSiteID', 'NZTMX', 'NZTMY', sites3)
-sites4.rename(columns={'ExtSiteID': 'wap'}, inplace=True)
+    catch_gdf = rec.catch_delineate(min_flow_sites_gdf, rec_rivers, rec_catch)
+    catch_gdf.to_file(os.path.join(param.results_path, catch_del_shp))
 
-sites5, poly1 = vector.pts_poly_join(sites4, catch1, 'ExtSiteID')
-sites5.to_file(os.path.join(results_path, wap_shp))
+    wap1 = mssql.rd_sql(server, database, crc_wap_table, ['wap']).wap.unique()
 
-##################################
-### Get crc data
+    sites3 = sites1[sites1.ExtSiteID.isin(wap1)].copy()
 
-allo1 = AlloUsage(crc_wap_filter={'wap': sites5.wap.unique().tolist()}, from_date=from_date, to_date=to_date)
+    sites4 = vector.xy_to_gpd('ExtSiteID', 'NZTMX', 'NZTMY', sites3)
+    sites4.rename(columns={'ExtSiteID': 'wap'}, inplace=True)
 
-#allo1.allo[allo1.allo.crc_status == 'Terminated - Replaced']
+    waps_gpd, poly1 = vector.pts_poly_join(sites4, catch_gdf, 'ExtSiteID')
+    waps_gpd.to_file(os.path.join(param.results_path, waps_shp))
 
-allo_wap1 = allo1.allo_wap.copy()
-allo_wap2 = pd.merge(allo_wap1.reset_index(), sites5.drop('geometry', axis=1), on='wap')
+    ##################################
+    ### Get crc data
 
-allo_wap2.to_csv(os.path.join(results_path, allo_wap_csv))
-allo1.allo.to_csv(os.path.join(results_path, allo_csv))
+    allo1 = AlloUsage(crc_wap_filter={'wap': waps_gpd.wap.unique().tolist()}, from_date=from_date, to_date=to_date)
+
+    #allo1.allo[allo1.allo.crc_status == 'Terminated - Replaced']
+
+    allo_wap1 = allo1.allo_wap.copy()
+    allo_wap = pd.merge(allo_wap1.reset_index(), waps_gpd.drop('geometry', axis=1), on='wap')
+
+    allo = allo1.allo.copy()
+
+    allo_wap.to_csv(os.path.join(param.results_path, allo_wap_csv))
+    allo.to_csv(os.path.join(param.results_path, allo_csv))
 
 
 #################################
