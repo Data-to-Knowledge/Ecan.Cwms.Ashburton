@@ -58,8 +58,9 @@ except:
     ash_sites1 = pd.read_csv(os.path.join(param.inputs_path, site_csv)).site.astype(str)
 
     sites0 = sites1[sites1.ExtSiteID.isin(ash_sites1)].copy()
+    sites0.rename(columns={'ExtSiteID': 'min_flow_site'}, inplace=True)
 
-    min_flow_sites_gdf = vector.xy_to_gpd('ExtSiteID', 'NZTMX', 'NZTMY', sites0)
+    min_flow_sites_gdf = vector.xy_to_gpd('min_flow_site', 'NZTMX', 'NZTMY', sites0)
     min_flow_sites_gdf.to_file(os.path.join(param.results_path, min_flow_sites_shp))
 
     sql1 = sql_arg()
@@ -79,11 +80,12 @@ except:
     wap1 = mssql.rd_sql(server, database, crc_wap_table, ['wap']).wap.unique()
 
     sites3 = sites1[sites1.ExtSiteID.isin(wap1)].copy()
+    sites3.rename(columns={'ExtSiteID': 'wap'}, inplace=True)
 
-    sites4 = vector.xy_to_gpd('ExtSiteID', 'NZTMX', 'NZTMY', sites3)
-    sites4.rename(columns={'ExtSiteID': 'wap'}, inplace=True)
+    sites4 = vector.xy_to_gpd('wap', 'NZTMX', 'NZTMY', sites3)
+    sites4 = sites4.merge(sites3.drop(['NZTMX', 'NZTMY'], axis=1), on='wap')
 
-    waps_gpd, poly1 = vector.pts_poly_join(sites4, catch_gdf, 'ExtSiteID')
+    waps_gpd, poly1 = vector.pts_poly_join(sites4, catch_gdf, 'min_flow_site')
     waps_gpd.to_file(os.path.join(param.results_path, waps_shp))
 
     ##################################
