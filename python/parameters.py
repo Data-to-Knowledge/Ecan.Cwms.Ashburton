@@ -24,7 +24,7 @@ ini1 = ConfigParser()
 ini1.read([os.path.join(py_path, os.path.splitext(__file__)[0] + '.ini')])
 
 ## Input
-niwa_climate_url = str(ini1.get('Input', 'niwa_climate_url'))
+#niwa_climate_url = str(ini1.get('Input', 'niwa_climate_url'))
 
 hydro_server = str(ini1.get('Input', 'server'))
 hydro_database = 'Hydro'
@@ -42,12 +42,14 @@ if not os.path.exists(inputs_path):
 
 ## Other
 
-rerun_usage_estimates = bool(int(ini1.get('Input', 'rerun_usage_estimates')))
+#rerun_usage_estimates = bool(int(ini1.get('Input', 'rerun_usage_estimates')))
 
-swaz_grps = ['Pendarves', 'Ashburton River', 'Hinds']
+#swaz_grps = ['Pendarves', 'Ashburton River', 'Hinds']
 
 from_date = str(ini1.get('Input', 'from_date'))
 to_date = str(ini1.get('Input', 'to_date'))
 
+min_gaugings = int(ini1.get('Input', 'min_gaugings'))
+buffer_dis = int(ini1.get('Input', 'buffer_dis'))
 
 
