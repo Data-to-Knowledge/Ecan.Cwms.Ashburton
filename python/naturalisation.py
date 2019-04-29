@@ -24,13 +24,28 @@ nat_flow_csv = 'nat_flow_{}.csv'.format(param.run_time)
 
 print('Naturalise the flow data')
 
-#try:
-#    site_rate = pd.read_csv(os.path.join(param.results_path, flow_site_sw_usage_csv), parse_dates=['date'], infer_datetime_format=True)
-#
-#except:
-## Process usage data
+### Resample to daily rate
 
-usage_rate2 = ue.usage_daily_rate.copy()
+usage_rate = ue.usage_rate.copy()
+
+days1 = usage_rate.date.dt.daysinmonth
+days2 = pd.to_timedelta((days1/2).round().astype('int32'), unit='D')
+
+usage_rate0 = usage_rate.copy()
+
+usage_rate0['date'] = usage_rate0['date'] - days2
+
+grp1 = usage_rate.groupby('wap')
+first1 = grp1.first()
+last1 = grp1.last()
+
+first1.loc[:, 'date'] = pd.to_datetime(first1.loc[:, 'date'].dt.strftime('%Y-%m') + '-01')
+
+usage_rate1 = pd.concat([first1, usage_rate0.set_index('wap'), last1], sort=True).reset_index()
+
+usage_rate1.set_index('date', inplace=True)
+
+usage_daily_rate = usage_rate1.groupby('wap').apply(lambda x: x.resample('D').interpolate(method='pchip')['sw_usage_rate']).reset_index()
 
 ## Combine usage with site data
 
@@ -38,7 +53,7 @@ print('-> Combine usage with site data')
 
 waps1 = takes.waps_gdf.drop(['geometry', 'SwazGroupName', 'SwazName'], axis=1).copy()
 
-usage_rate3 = pd.merge(waps1, usage_rate2.reset_index(), on='wap')
+usage_rate3 = pd.merge(waps1, usage_daily_rate.reset_index(), on='wap')
 
 site_rate = usage_rate3.groupby(['flow_site', 'date'])[['sw_usage_rate']].sum().reset_index()
 

@@ -38,7 +38,6 @@ try:
     res_swaz5 = pd.read_csv(os.path.join(param.results_path, swaz_mon_ratio_csv))
     usage4 = pd.read_csv(os.path.join(param.results_path, allo_usage_wap_swaz_csv), parse_dates=['date'], infer_datetime_format=True)
     usage_rate = pd.read_csv(os.path.join(param.results_path, wap_sw_mon_usage_csv), parse_dates=['date'], infer_datetime_format=True)
-    usage_daily_rate = pd.read_hdf(os.path.join(param.results_path, wap_sw_daily_usage_hdf))
 
     print('-> loaded from local files')
 
@@ -104,31 +103,10 @@ except:
 
     usage4.reset_index(inplace=True)
 
-    ### Resample to daily rate
-    days1 = usage_rate.date.dt.daysinmonth
-    days2 = pd.to_timedelta((days1/2).round().astype('int32'), unit='D')
-
-    usage_rate0 = usage_rate.copy()
-
-    usage_rate0['date'] = usage_rate0['date'] - days2
-
-    grp1 = usage_rate.groupby('wap')
-    first1 = grp1.first()
-    last1 = grp1.last()
-
-    first1.loc[:, 'date'] = pd.to_datetime(first1.loc[:, 'date'].dt.strftime('%Y-%m') + '-01')
-
-    usage_rate1 = pd.concat([first1, usage_rate0.set_index('wap'), last1], sort=True).reset_index()
-
-    usage_rate1.set_index('date', inplace=True)
-
-    usage_daily_rate = usage_rate1.groupby('wap').apply(lambda x: x.resample('D').interpolate(method='pchip')['sw_usage_rate']).reset_index()
-
     ### Save results
 
     res_swaz5.to_csv(os.path.join(param.results_path, swaz_mon_ratio_csv), index=False)
     usage4.to_csv(os.path.join(param.results_path, allo_usage_wap_swaz_csv), index=False)
     usage_rate.to_csv(os.path.join(param.results_path, wap_sw_mon_usage_csv), index=False)
-    usage_daily_rate.to_hdf(os.path.join(param.results_path, wap_sw_daily_usage_hdf), 'daily_usage', index=False)
 
 
