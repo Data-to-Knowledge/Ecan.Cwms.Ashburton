@@ -118,10 +118,12 @@ except:
 
             s1 = res1.summary_df.iloc[0]
 
-            new_data1 = np.exp(np.log(rec_ts_data3[s1['x sites']]) * float(s1['x slopes']) + float(s1['y intercept']))
+            d1 = rec_ts_data3[s1['x sites']].copy()
+            d1[d1 <= 0] = 0.001
+
+            new_data1 = np.exp(np.log(d1) * float(s1['x slopes']) + float(s1['y intercept']))
             new_data1.name = col
             new_data1[new_data1 <= 0] = 0
-            new_data1[new_data1 > 10000] = 0
         else:
             reg_lst.append(res2.summary_df)
 
@@ -130,10 +132,14 @@ except:
             x_slopes = [float(s) for s in s1['x slopes'].split(', ')]
             intercept = float(s1['y intercept'])
 
-            new_data1 = np.exp((np.log(rec_ts_data3[x_sites[0]]) * float(x_slopes[0])) + (np.log(rec_ts_data3[x_sites[1]]) * float(x_slopes[1])) + intercept)
+            d1 = rec_ts_data3[x_sites[0]].copy()
+            d1[d1 <= 0] = 0.001
+            d2 = rec_ts_data3[x_sites[1]].copy()
+            d2[d2 <= 0] = 0.001
+
+            new_data1 = np.exp((np.log(d1) * float(x_slopes[0])) + (np.log(d2) * float(x_slopes[1])) + intercept)
             new_data1.name = col
             new_data1[new_data1 <= 0] = 0
-            new_data1[new_data1 > 10000] = 0
 
         new_lst.append(new_data1)
 
