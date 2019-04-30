@@ -25,8 +25,9 @@ nat_flow_csv = 'nat_flow_{}.csv'.format(param.run_time)
 print('Naturalise the flow data')
 
 ### Resample to daily rate
+waps1 = takes.waps_gdf.drop(['geometry', 'SwazGroupName', 'SwazName'], axis=1).copy()
 
-usage_rate = ue.usage_rate.copy()
+usage_rate = ue.usage_rate[ue.usage_rate.wap.isin(waps1.wap.unique())].copy()
 
 days1 = usage_rate.date.dt.daysinmonth
 days2 = pd.to_timedelta((days1/2).round().astype('int32'), unit='D')
@@ -50,8 +51,6 @@ usage_daily_rate = usage_rate1.groupby('wap').apply(lambda x: x.resample('D').in
 ## Combine usage with site data
 
 print('-> Combine usage with site data')
-
-waps1 = takes.waps_gdf.drop(['geometry', 'SwazGroupName', 'SwazName'], axis=1).copy()
 
 usage_rate3 = pd.merge(waps1, usage_daily_rate.reset_index(), on='wap')
 
