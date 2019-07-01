@@ -11,96 +11,96 @@ from gistools import rec, vector
 from ecandbparams import sql_arg
 from allotools import AlloUsage
 from pdsql import mssql
-import parameters as param
+from parameters import param
 
 pd.options.display.max_columns = 10
 
 #######################################
 ### Parameters
 
-site_csv = 'ashburton_sites.csv'
+site_csv = 'sites.csv'
 
-server = param.hydro_server
-database = 'hydro'
+ts_server = param['ts_server']
+permit_server = param['permit_server']
+ts_database = 'hydro'
+permit_database = 'ConsentsReporting'
 sites_table = 'ExternalSite'
-crc_wap_table = 'CrcWapAllo'
+crc_wap_table = 'reporting.CrcAlloSiteSumm'
+results_path = param['results_path']
 
 rec_rivers_sql = 'rec_rivers_gis'
 rec_catch_sql = 'rec_catch_gis'
 
-from_date = '2019-04-01'
-to_date = '2019-06-30'
-
-catch_del_shp = 'catch_del_{}.shp'.format(param.run_time)
-allo_csv = 'allo_{}.csv'.format(param.run_time)
-allo_wap_csv = 'allo_wap_{}.csv'.format(param.run_time)
-waps_shp = 'waps_{}.shp'.format(param.run_time)
-flow_sites_shp = 'flow_sites_{}.shp'.format(param.run_time)
+catch_del_shp = 'catch_del_{}.shp'.format(param['run_time'])
+catch_del_base = 'catch_del_'
+allo_csv = 'allo_{}.csv'.format(param['run_time'])
+waps_shp = 'waps_{}.shp'.format(param['run_time'])
+flow_sites_shp = 'flow_sites_{}.shp'.format(param['run_time'])
 
 ######################################
 ### Read in data
 print('Read in allocation and sites data')
 
 try:
-    flow_sites_gdf = gpd.read_file(os.path.join(param.results_path, flow_sites_shp))
-    catch_gdf = gpd.read_file(os.path.join(param.results_path, catch_del_shp))
-    waps_gdf = gpd.read_file(os.path.join(param.results_path, waps_shp))
+    flow_sites_gdf = gpd.read_file(os.path.join(results_path, flow_sites_shp))
+    waps_gdf = gpd.read_file(os.path.join(results_path, waps_shp))
     waps_gdf.rename(columns={'SwazGroupN': 'SwazGroupName', 'min_flow_s': 'min_flow_site'}, inplace=True)
-    allo_wap = pd.read_csv(os.path.join(param.results_path, allo_wap_csv))
-    allo = pd.read_csv(os.path.join(param.results_path, allo_csv))
+    allo = pd.read_csv(os.path.join(results_path, allo_csv))
 
     print('-> loaded from local files')
 
 except:
     print('-> Processing data from the databases')
 
-    sites1 = mssql.rd_sql(server, database, sites_table, ['ExtSiteID', 'NZTMX', 'NZTMY', 'SwazGroupName', 'SwazName'])
+    sites1 = mssql.rd_sql(ts_server, ts_database, sites_table, ['ExtSiteID', 'NZTMX', 'NZTMY', 'SwazGroupName', 'SwazName'])
 
-    ash_sites1 = pd.read_csv(os.path.join(param.inputs_path, site_csv)).site.astype(str)
+    input_sites1 = pd.read_csv(os.path.join(param['inputs_path'], site_csv)).site.astype(str)
 
-    sites0 = sites1[sites1.ExtSiteID.isin(ash_sites1)].copy()
-    sites0.rename(columns={'ExtSiteID': 'flow_site'}, inplace=True)
+    sites0 = sites1[sites1.ExtSiteID.isin(input_sites1)].copy()
+    sites0.rename(columns={'ExtSiteID': 'FlowSite'}, inplace=True)
 
-    flow_sites_gdf = vector.xy_to_gpd('flow_site', 'NZTMX', 'NZTMY', sites0)
-    flow_sites_gdf.to_file(os.path.join(param.results_path, flow_sites_shp))
-
-    sql1 = sql_arg()
-
-    rec_rivers_dict = sql1.get_dict(rec_rivers_sql)
-    rec_catch_dict = sql1.get_dict(rec_catch_sql)
-
-    rec_rivers = mssql.rd_sql(**rec_rivers_dict)
-    rec_catch = mssql.rd_sql(**rec_catch_dict)
+    flow_sites_gdf = vector.xy_to_gpd('FlowSite', 'NZTMX', 'NZTMY', sites0)
+    flow_sites_gdf.to_file(os.path.join(results_path, flow_sites_shp))
 
     ###################################
-    ### Catchment delineation and WAPs
+    ### Catchment delineation
 
-    catch_gdf = rec.catch_delineate(flow_sites_gdf, rec_rivers, rec_catch)
-    catch_gdf.to_file(os.path.join(param.results_path, catch_del_shp))
+    try:
+        catch_del_shp = [p for p in os.listdir(results_path) if (catch_del_base in p) and ('.shp' in p)][-1]
+        catch_gdf = gpd.read_file(os.path.join(results_path, catch_del_shp))
+    except:
+        sql1 = sql_arg()
 
-    wap1 = mssql.rd_sql(server, database, crc_wap_table, ['wap']).wap.unique()
+        rec_rivers_dict = sql1.get_dict(rec_rivers_sql)
+        rec_catch_dict = sql1.get_dict(rec_catch_sql)
+
+        rec_rivers = mssql.rd_sql(**rec_rivers_dict)
+        rec_catch = mssql.rd_sql(**rec_catch_dict)
+
+        catch_gdf = rec.catch_delineate(flow_sites_gdf, rec_rivers, rec_catch)
+        catch_gdf.to_file(os.path.join(results_path, catch_del_shp))
+
+    ###################################
+    ### WAP selection
+
+    wap1 = mssql.rd_sql(permit_server, permit_database, crc_wap_table, ['ExtSiteID'], where_in={'ConsentStatus': param['crc_status']}).ExtSiteID.unique()
 
     sites3 = sites1[sites1.ExtSiteID.isin(wap1)].copy()
-    sites3.rename(columns={'ExtSiteID': 'wap'}, inplace=True)
+    sites3.rename(columns={'ExtSiteID': 'Wap'}, inplace=True)
 
-    sites4 = vector.xy_to_gpd('wap', 'NZTMX', 'NZTMY', sites3)
-    sites4 = sites4.merge(sites3.drop(['NZTMX', 'NZTMY'], axis=1), on='wap')
+    sites4 = vector.xy_to_gpd('Wap', 'NZTMX', 'NZTMY', sites3)
+    sites4 = sites4.merge(sites3.drop(['NZTMX', 'NZTMY'], axis=1), on='Wap')
 
-    waps_gdf, poly1 = vector.pts_poly_join(sites4, catch_gdf, 'flow_site')
-    waps_gdf.to_file(os.path.join(param.results_path, waps_shp))
+    waps_gdf, poly1 = vector.pts_poly_join(sites4, catch_gdf, 'FlowSite')
+    waps_gdf.to_file(os.path.join(results_path, waps_shp))
 
     ##################################
     ### Get crc data
 
-    allo1 = AlloUsage(crc_wap_filter={'wap': waps_gdf.wap.unique().tolist()}, from_date=from_date, to_date=to_date)
+    allo1 = AlloUsage(crc_filter={'ExtSiteID': waps_gdf.Wap.unique().tolist(), 'ConsentStatus': param['crc_status']}, from_date=param['from_date'], to_date=param['to_date'])
 
-    #allo1.allo[allo1.allo.crc_status == 'Terminated - Replaced']
+    allo_wap1 = allo1.allo.copy()
+    allo_wap = pd.merge(allo_wap1.reset_index(), waps_gdf[['Wap', 'FlowSite']], on='Wap')
 
-    allo_wap1 = allo1.allo_wap.copy()
-    allo_wap = pd.merge(allo_wap1.reset_index(), waps_gdf.drop('geometry', axis=1), on='wap')
-
-    allo = allo1.allo.copy()
-
-    allo_wap.to_csv(os.path.join(param.results_path, allo_wap_csv))
-    allo.to_csv(os.path.join(param.results_path, allo_csv))
+    allo_wap.to_csv(os.path.join(results_path, allo_csv), index=False)
 

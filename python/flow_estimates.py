@@ -12,24 +12,25 @@ import geopandas as gpd
 import upstream_takes as takes
 from hydrolm import LM
 from gistools import vector
-import parameters as param
+from parameters import param
 
 pd.options.display.max_columns = 10
 
 #######################################
 ### Parameters
 
-server = param.hydro_server
+server = param['ts_server']
 database = 'hydro'
 site_table = 'ExternalSite'
 ts_table = 'TSDataNumericDaily'
 ts_summ_table = 'TSDataNumericDailySumm'
 dataset_type_table = 'DatasetType'
+results_path = param['results_path']
 
-buffer_dis = param.buffer_dis
+buffer_dis = param['buffer_dis']
 
-flow_csv = 'flow_data_{}.csv'.format(param.run_time)
-reg_flow_csv = 'reg_flow_{}.csv'.format(param.run_time)
+flow_csv = 'flow_data_{}.csv'.format(param['run_time'])
+reg_flow_csv = 'reg_flow_{}.csv'.format(param['run_time'])
 
 
 #####################################
@@ -58,11 +59,11 @@ except:
     rec_datasets = datasets[datasets.CTypeID == 1].DatasetTypeID.tolist()
     man_datasets = datasets[datasets.CTypeID == 2].DatasetTypeID.tolist()
 
-    rec_summ1 = site_summ1[site_summ1.DatasetTypeID.isin(rec_datasets) & (site_summ1.FromDate <= param.from_date) & (site_summ1.ToDate >= param.to_date)].copy()
+    rec_summ1 = site_summ1[site_summ1.DatasetTypeID.isin(rec_datasets) & (site_summ1.FromDate <= param['from_date']) & (site_summ1.ToDate >= param['to_date'])].sort_values('ToDate', ascending=False).drop_duplicates('ExtSiteID').copy()
 
     flow_sites_gdf = takes.flow_sites_gdf.copy()
 
-    sites_rec_bool = flow_sites_gdf.flow_site.isin(rec_summ1.ExtSiteID.unique())
+    sites_rec_bool = flow_sites_gdf.FlowSite.isin(rec_summ1.ExtSiteID.unique())
 
     sites_rec1 = flow_sites_gdf[sites_rec_bool].copy()
     sites_man1 = flow_sites_gdf[~sites_rec_bool].copy()
@@ -78,13 +79,13 @@ except:
 
     rec_sites2 = vector.sel_sites_poly(flow_rec_sites2, sites_man2)
 
-    rec_ts_data1 = mssql.rd_sql_ts(server, database, ts_table, 'ExtSiteID', 'DateTime', 'Value', from_date=param.from_date, to_date=param.to_date, where_in={'ExtSiteID': rec_sites2.ExtSiteID.tolist(), 'DatasetTypeID': rec_summ1.DatasetTypeID.unique().tolist()})
+    rec_ts_data1 = mssql.rd_sql_ts(server, database, ts_table, 'ExtSiteID', 'DateTime', 'Value', from_date=param['from_date'], to_date=param['to_date'], where_in={'ExtSiteID': rec_sites2.ExtSiteID.tolist(), 'DatasetTypeID': rec_summ1.DatasetTypeID.unique().tolist()})
 
     rec_ts_data2 = rec_ts_data1.Value.unstack(0).interpolate('time', limit=10).dropna(axis=1)
 
-    rec_flow1 = rec_ts_data2.loc[:, rec_ts_data2.columns.isin(sites_rec1.flow_site)].copy()
+    rec_flow1 = rec_ts_data2.loc[:, rec_ts_data2.columns.isin(sites_rec1.FlowSite)].copy()
 
-    man_ts_data1 = mssql.rd_sql_ts(server, database, ts_table, 'ExtSiteID', 'DateTime', 'Value', from_date=param.from_date, to_date=param.to_date, where_in={'ExtSiteID': sites_man1.flow_site.tolist(), 'DatasetTypeID': man_datasets})
+    man_ts_data1 = mssql.rd_sql_ts(server, database, ts_table, 'ExtSiteID', 'DateTime', 'Value', from_date=param['from_date'], to_date=param['to_date'], where_in={'ExtSiteID': sites_man1.FlowSite.tolist(), 'DatasetTypeID': man_datasets})
 
     man_ts_data2 = man_ts_data1.Value.unstack(0)
 
@@ -92,7 +93,7 @@ except:
     new_lst = []
 
     for col in man_ts_data2:
-        site0 = sites_man1[sites_man1.flow_site == col]
+        site0 = sites_man1[sites_man1.FlowSite == col]
 
         site1 = gpd.GeoDataFrame(geometry=site0.buffer(buffer_dis))
 
@@ -102,12 +103,12 @@ except:
         rec_ts_data4 = rec_ts_data3.copy()
         rec_ts_data4[rec_ts_data4 <= 0] = np.nan
 
-        man_ts_data3 = man_ts_data2.loc[:, [site0.flow_site.iloc[0]]].copy()
+        man_ts_data3 = man_ts_data2.loc[:, [site0.FlowSite.iloc[0]]].copy()
         man_ts_data3[man_ts_data3 <= 0] = np.nan
 
         lm1 = LM(rec_ts_data4, man_ts_data3)
-        res1 = lm1.predict(n_ind=1, x_transform='log', y_transform='log', min_obs=param.min_gaugings)
-        res2 = lm1.predict(n_ind=2, x_transform='log', y_transform='log', min_obs=param.min_gaugings)
+        res1 = lm1.predict(n_ind=1, x_transform='log', y_transform='log', min_obs=param['min_gaugings'])
+        res2 = lm1.predict(n_ind=2, x_transform='log', y_transform='log', min_obs=param['min_gaugings'])
 
         f = [res1.summary_df['f value'].iloc[0], res2.summary_df['f value'].iloc[0]]
 
@@ -148,7 +149,7 @@ except:
 
     flow = pd.concat([rec_flow1, new_data2], axis=1)
 
-    flow.to_csv(os.path.join(param.results_path, flow_csv))
-    reg_df.to_csv(os.path.join(param.results_path, reg_flow_csv), index=False)
+    flow.round(3).to_csv(os.path.join(results_path, flow_csv))
+    reg_df.to_csv(os.path.join(results_path, reg_flow_csv), index=False)
 
 
